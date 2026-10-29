@@ -241,17 +241,17 @@ emulator consults that map for hostNetwork pod requests and resolves the cgroup
 ID to a pod UID by walking `/sys/fs/cgroup`, giving hostNetwork pods per-pod
 identity (see [Pods running on the host network](#pods-running-on-the-host-network)).
 
-By default the `connect()` program is attached to the cgroup v2 root, so every process on
-the Node is redirected, including host services. On a VM whose own metadata server listens on
-`169.254.169.254` (for example a self-managed cluster on GCE VMs), host services that use it for
-the VM's service account would then reach the emulator, which refuses them because they are not
-Pods. The annotation `node.gke-metadata-server.matheuscscp.io/cgroupPath` can be added to a Node
-in order to attach the program to a cgroup subtree in that particular Node instead, for example
-`/sys/fs/cgroup/kubepods.slice` (the Pods' subtree with the kubelet's systemd cgroup driver), so
-only Pods are redirected. The value must be a directory under `/sys/fs/cgroup`, as a full path or
-relative to `/sys/fs/cgroup`, otherwise the emulator fails to start. The same key also works as a
-label, but label values can't contain `/`, so a label can only name a directory right under
-`/sys/fs/cgroup`, for example `kubepods.slice`.
+By default the `connect()` program is attached to the cgroup v2 root, so host services are
+redirected too. On a VM whose own metadata server listens on `169.254.169.254`, such as a
+self-managed cluster on GCE, the emulator then refuses them because they are not Pods. The
+annotation `node.gke-metadata-server.matheuscscp.io/cgroupPath` on a Node attaches the program to a
+cgroup subtree instead, so only Pods are redirected. For example, use `/sys/fs/cgroup/kubepods.slice`
+with the kubelet's systemd cgroup driver, or `/sys/fs/cgroup/kubepods` with cgroupfs (both assume
+the default `cgroupRoot`). The value must be a directory under `/sys/fs/cgroup` (full or relative
+path) that contains the emulator's own Pod, and it is only valid in `eBPF` mode. Otherwise the
+emulator fails to start. Pods outside the directory are not redirected. As a label, the value can
+only name a directory right under `/sys/fs/cgroup`, for example `kubepods.slice`, because label
+values can't contain `/`. The emulator reads the value at startup, so restart its Pod after a change.
 
 This mode coexists with other eBPF tools that attach to `cgroup/connect4` —
 notably Cilium, including with [`kubeProxyReplacement`](https://docs.cilium.io/en/stable/network/kubernetes/kubeproxy-free/)
