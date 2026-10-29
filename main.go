@@ -280,7 +280,7 @@ func main() {
 	if err != nil {
 		l.WithError(err).Fatal("error getting current node")
 	}
-	routingMode, closeRoute, err := routing.LoadAndAttach(curNode, emulatorIP, serverPort)
+	routingMode, cgroupPath, closeRoute, err := routing.LoadAndAttach(curNode, emulatorIP, serverPort)
 	if err != nil {
 		l.WithField("routing", routingMode).WithError(err).Fatal("error loading and attaching network route")
 	}
@@ -319,10 +319,14 @@ func main() {
 		attestationLookuper = sockdiag.New()
 	}
 
-	l.WithFields(logrus.Fields{
+	routingFields := logrus.Fields{
 		"routing":    routingMode,
 		"serverAddr": serverAddr,
-	}).Info("routing mode loaded and attached")
+	}
+	if cgroupPath != "" {
+		routingFields["cgroupPath"] = cgroupPath
+	}
+	l.WithFields(routingFields).Info("routing mode loaded and attached")
 
 	// test-only: bring up the proxy-passthrough marker upstream on lo so the
 	// e2e suite can prove the cgroup-ID self-exemption + userspace forward

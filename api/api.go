@@ -10,6 +10,7 @@ const (
 	GroupGKE = "iam.gke.io"
 
 	AnnotationRoutingMode = GroupNode + "/routingMode"
+	AnnotationCgroupPath  = GroupNode + "/cgroupPath"
 
 	RoutingModeDefault  = RoutingModeBPF
 	RoutingModeBPF      = "eBPF"

@@ -25,7 +25,7 @@ import (
 
 const cgroupv2Mount = "/sys/fs/cgroup"
 
-func LoadAndAttach(emulatorIP netip.Addr, emulatorPort int) func() (func() error, error) {
+func LoadAndAttach(emulatorIP netip.Addr, emulatorPort int, cgroupPath string) func() (func() error, error) {
 	return func() (func() error, error) {
 		var objs redirectObjects
 		if err := loadRedirectObjects(&objs, nil); err != nil {
@@ -57,7 +57,7 @@ func LoadAndAttach(emulatorIP netip.Addr, emulatorPort int) func() (func() error
 
 		// Attach the eBPF program to the cgroup.
 		link, err := link.AttachCgroup(link.CgroupOptions{
-			Path:    cgroupv2Mount,
+			Path:    cgroupPath,
 			Attach:  ebpf.AttachCGroupInet4Connect,
 			Program: objs.RedirectConnect4,
 		})
