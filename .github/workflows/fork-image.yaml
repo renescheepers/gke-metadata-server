@@ -2,7 +2,7 @@ name: fork-image
 
 on:
   push:
-    branches: [rs/build]
+    branches: [main, rs/build]
   workflow_dispatch:
 
 permissions: {}
