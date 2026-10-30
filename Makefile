@@ -91,8 +91,6 @@ cluster:
 		*) echo "unknown CNI=$$CNI"; exit 1 ;; \
 	esac; \
 	kind create cluster --name gke-metadata-server --config $$KIND_CONFIG
-	kubectl --context kind-gke-metadata-server annotate node -l allNodesTest=true \
-		node.gke-metadata-server.matheuscscp.io/cgroupPath=/sys/fs/cgroup/kubelet.slice/kubelet-kubepods.slice
 	kubectl --context kind-gke-metadata-server get nodes -o custom-columns="NODE:.metadata.name,ROUTING MODE:.metadata.labels['node\.gke-metadata-server\.matheuscscp\.io/routingMode']"
 	make create-or-update-provider TEST_ID=${TEST_ID} PROVIDER_COMMAND=${PROVIDER_COMMAND}
 	@CNI=$${CNI:-cilium-default}; \

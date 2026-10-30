@@ -38,81 +38,63 @@ func fakeCgroupRoot(t *testing.T) (root, pods string) {
 	return root, pods
 }
 
-func newNode(annotations, labels map[string]string) *corev1.Node {
-	return &corev1.Node{ObjectMeta: metav1.ObjectMeta{
-		Annotations: annotations,
-		Labels:      labels,
-	}}
-}
-
-func TestGetCgroupPath(t *testing.T) {
+func TestCheckCgroupPath(t *testing.T) {
 	root, pods := fakeCgroupRoot(t)
 
 	for _, tt := range []struct {
-		name        string
-		annotations map[string]string
-		labels      map[string]string
-		unset       bool
-		want        string
-		wantErr     string
-		wantErrIs   error
+		name      string
+		path      string
+		want      string
+		wantErr   string
+		wantErrIs error
 	}{
 		{
-			name:  "unset means the root",
-			unset: true,
-			want:  root,
+			name: "empty means the root",
+			want: root,
 		},
 		{
-			name:        "empty annotation means the root and hides the label",
-			annotations: map[string]string{api.AnnotationCgroupPath: ""},
-			labels:      map[string]string{api.AnnotationCgroupPath: "system.slice"},
-			want:        root,
+			name: "Pods' subtree",
+			path: pods,
+			want: pods,
 		},
 		{
-			name:        "annotation",
-			annotations: map[string]string{api.AnnotationCgroupPath: pods},
-			want:        pods,
+			name: "path is cleaned",
+			path: pods + "/",
+			want: pods,
 		},
 		{
-			name:   "label is relative to the root",
-			labels: map[string]string{api.AnnotationCgroupPath: "kubepods.slice"},
-			want:   pods,
+			name:    "relative path",
+			path:    "kubepods.slice",
+			wantErr: "must be a directory under",
 		},
 		{
-			name:        "annotation wins over label",
-			annotations: map[string]string{api.AnnotationCgroupPath: pods},
-			labels:      map[string]string{api.AnnotationCgroupPath: "system.slice"},
-			want:        pods,
+			name:    "outside the root",
+			path:    "/etc",
+			wantErr: "must be a directory under",
 		},
 		{
-			name:        "outside the root",
-			annotations: map[string]string{api.AnnotationCgroupPath: "/etc"},
-			wantErr:     "must be a directory under",
+			name:    "out of the root through ..",
+			path:    root + "/../etc",
+			wantErr: "must be a directory under",
 		},
 		{
-			name:        "relative path out of the root",
-			annotations: map[string]string{api.AnnotationCgroupPath: "../etc"},
-			wantErr:     "must be a directory under",
+			name:      "missing directory",
+			path:      filepath.Join(root, "kubepods"),
+			wantErrIs: fs.ErrNotExist,
 		},
 		{
-			name:        "missing directory",
-			annotations: map[string]string{api.AnnotationCgroupPath: filepath.Join(root, "kubepods")},
-			wantErrIs:   fs.ErrNotExist,
+			name:    "not a directory",
+			path:    filepath.Join(root, "cgroup.procs"),
+			wantErr: "not a directory",
 		},
 		{
-			name:        "not a directory",
-			annotations: map[string]string{api.AnnotationCgroupPath: filepath.Join(root, "cgroup.procs")},
-			wantErr:     "is not a directory",
-		},
-		{
-			name:        "directory without the emulator's own Pod",
-			annotations: map[string]string{api.AnnotationCgroupPath: filepath.Join(root, "system.slice")},
-			wantErr:     "must contain the emulator's own Pod cgroup",
+			name:    "directory without the emulator's own Pod",
+			path:    filepath.Join(root, "system.slice"),
+			wantErr: "must contain the emulator's own Pod cgroup",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, set, err := getCgroupPath(newNode(tt.annotations, tt.labels))
-			assert.Equal(t, !tt.unset, set)
+			got, err := checkCgroupPath(tt.path)
 			if tt.wantErrIs != nil {
 				assert.ErrorIs(t, err, tt.wantErrIs)
 				return
@@ -127,110 +109,45 @@ func TestGetCgroupPath(t *testing.T) {
 	}
 }
 
-func TestGetMode(t *testing.T) {
-	root, pods := fakeCgroupRoot(t)
+func TestLoadAndAttach(t *testing.T) {
+	fakeCgroupRoot(t)
 
 	for _, tt := range []struct {
-		name           string
-		annotations    map[string]string
-		labels         map[string]string
-		wantMode       string
-		wantCgroupPath string
-		wantErr        string
+		name    string
+		mode    string
+		path    string
+		wantErr string
 	}{
 		{
-			name:           "default is eBPF on the root",
-			wantMode:       api.RoutingModeBPF,
-			wantCgroupPath: root,
+			name: "None mode ignores the cgroup path",
+			mode: api.RoutingModeNone,
+			path: "/etc",
 		},
 		{
-			name:     "label",
-			labels:   map[string]string{api.AnnotationRoutingMode: api.RoutingModeLoopback},
-			wantMode: api.RoutingModeLoopback,
+			name:    "invalid cgroup path in eBPF mode",
+			mode:    api.RoutingModeBPF,
+			path:    "/etc",
+			wantErr: "must be a directory under",
 		},
 		{
-			name:        "annotation wins over label",
-			annotations: map[string]string{api.AnnotationRoutingMode: api.RoutingModeNone},
-			labels:      map[string]string{api.AnnotationRoutingMode: api.RoutingModeLoopback},
-			wantMode:    api.RoutingModeNone,
-		},
-		{
-			name:           "eBPF with cgroupPath",
-			annotations:    map[string]string{api.AnnotationCgroupPath: pods},
-			wantMode:       api.RoutingModeBPF,
-			wantCgroupPath: pods,
-		},
-		{
-			name:        "eBPF with an invalid cgroupPath",
-			annotations: map[string]string{api.AnnotationCgroupPath: "/etc"},
-			wantMode:    api.RoutingModeBPF,
-			wantErr:     "must be a directory under",
-		},
-		{
-			name: "cgroupPath annotation in Loopback mode",
-			annotations: map[string]string{
-				api.AnnotationRoutingMode: api.RoutingModeLoopback,
-				api.AnnotationCgroupPath:  pods,
-			},
-			wantMode: api.RoutingModeLoopback,
-			wantErr:  "is only supported in the eBPF routing mode",
-		},
-		{
-			name: "empty cgroupPath annotation in Loopback mode",
-			annotations: map[string]string{
-				api.AnnotationRoutingMode: api.RoutingModeLoopback,
-				api.AnnotationCgroupPath:  "",
-			},
-			wantMode: api.RoutingModeLoopback,
-			wantErr:  "is only supported in the eBPF routing mode",
-		},
-		{
-			name: "invalid cgroupPath in None mode",
-			annotations: map[string]string{
-				api.AnnotationRoutingMode: api.RoutingModeNone,
-				api.AnnotationCgroupPath:  "/etc",
-			},
-			wantMode: api.RoutingModeNone,
-			wantErr:  "is only supported in the eBPF routing mode",
-		},
-		{
-			name: "cgroupPath label in None mode",
-			labels: map[string]string{
-				api.AnnotationRoutingMode: api.RoutingModeNone,
-				api.AnnotationCgroupPath:  "kubepods.slice",
-			},
-			wantMode: api.RoutingModeNone,
-			wantErr:  "is only supported in the eBPF routing mode",
-		},
-		{
-			name: "invalid mode is left to LoadAndAttach",
-			annotations: map[string]string{
-				api.AnnotationRoutingMode: "ebpf",
-				api.AnnotationCgroupPath:  pods,
-			},
-			wantMode: "ebpf",
+			name:    "invalid routing mode",
+			mode:    "ebpf",
+			wantErr: "invalid routing mode: ebpf",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			mode, cgroupPath, err := getMode(newNode(tt.annotations, tt.labels))
-			assert.Equal(t, tt.wantMode, mode)
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{api.AnnotationRoutingMode: tt.mode},
+			}}
+			mode, cgroupPath, closeRoute, err := LoadAndAttach(node, netip.Addr{}, 0, tt.path)
+			assert.Equal(t, tt.mode, mode)
 			if tt.wantErr != "" {
 				assert.ErrorContains(t, err, tt.wantErr)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantCgroupPath, cgroupPath)
+			assert.Empty(t, cgroupPath)
+			assert.NoError(t, closeRoute())
 		})
 	}
-}
-
-func TestLoadAndAttachInvalidMode(t *testing.T) {
-	node := newNode(map[string]string{
-		api.AnnotationRoutingMode: "ebpf",
-		api.AnnotationCgroupPath:  "/sys/fs/cgroup/kubepods.slice",
-	}, nil)
-
-	mode, _, _, err := LoadAndAttach(node, netip.Addr{}, 0)
-	assert.Equal(t, "ebpf", mode)
-	assert.EqualError(t, err, "invalid routing mode: ebpf")
 }

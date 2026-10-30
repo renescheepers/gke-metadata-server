@@ -51,15 +51,16 @@ func envOrDefault(k, d string) string {
 
 func TestEndToEnd(t *testing.T) {
 	for _, tt := range []struct {
-		name            string
-		emulatorValues  string
-		allNodes        bool
-		cgroupPathNodes string
-		pods            []pod
+		name           string
+		emulatorValues string
+		allNodes       bool
+		checkHostNodes string
+		pods           []pod
 	}{
 		{
 			name:           "helm",
 			emulatorValues: "helm.yaml",
+			checkHostNodes: "node.gke-metadata-server.matheuscscp.io/routingMode=eBPF",
 			pods: []pod{{
 				name:               "test-impersonation",
 				serviceAccountName: "test-impersonated",
@@ -80,10 +81,10 @@ func TestEndToEnd(t *testing.T) {
 			}},
 		},
 		{
-			name:            "timoni all nodes",
-			emulatorValues:  "timoni-all-nodes.cue",
-			allNodes:        true,
-			cgroupPathNodes: "allNodesTest=true",
+			name:           "timoni all nodes",
+			emulatorValues: "timoni-all-nodes.cue",
+			allNodes:       true,
+			checkHostNodes: "allNodesTest=true",
 			pods: []pod{{
 				name:               "test-impersonation",
 				serviceAccountName: "test-impersonated",
@@ -211,8 +212,8 @@ func TestEndToEnd(t *testing.T) {
 			applyPods(t, tt.pods)
 			exitCodes := waitForPods(t, tt.pods)
 			checkExitCodes(t, tt.pods, exitCodes)
-			if tt.cgroupPathNodes != "" {
-				checkHostNotRedirected(t, tt.cgroupPathNodes)
+			if tt.checkHostNodes != "" {
+				checkHostNotRedirected(t, tt.checkHostNodes)
 			}
 		})
 	}

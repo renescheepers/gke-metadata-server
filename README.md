@@ -243,15 +243,14 @@ identity (see [Pods running on the host network](#pods-running-on-the-host-netwo
 
 By default the `connect()` program is attached to the cgroup v2 root, so host services are
 redirected too. On a VM whose own metadata server listens on `169.254.169.254`, such as a
-self-managed cluster on GCE, the emulator then refuses them because they are not Pods. The
-annotation `node.gke-metadata-server.matheuscscp.io/cgroupPath` on a Node attaches the program to a
-cgroup subtree instead, so only Pods are redirected. For example, use `/sys/fs/cgroup/kubepods.slice`
-with the kubelet's systemd cgroup driver, or `/sys/fs/cgroup/kubepods` with cgroupfs (both assume
-the default `cgroupRoot`). The value must be a directory under `/sys/fs/cgroup` (full or relative
-path) that contains the emulator's own Pod, and it is only valid in `eBPF` mode. Otherwise the
-emulator fails to start. Pods outside the directory are not redirected. As a label, the value can
-only name a directory right under `/sys/fs/cgroup`, for example `kubepods.slice`, because label
-values can't contain `/`. The emulator reads the value at startup, so restart its Pod after a change.
+self-managed cluster on GCE, the emulator then refuses them because they are not Pods. Set
+`--redirect-cgroup-path` (Helm `config.redirectCgroupPath`, Timoni `redirectCgroupPath`) to attach
+the program to a cgroup subtree instead, so only Pods are redirected. For example, use
+`/sys/fs/cgroup/kubepods.slice` with the kubelet's systemd cgroup driver, or `/sys/fs/cgroup/kubepods`
+with cgroupfs (both assume the default `cgroupRoot`). The value must be a directory under
+`/sys/fs/cgroup` that contains the emulator's own Pod, otherwise the emulator fails to start on Nodes
+in `eBPF` mode. Nodes in the other routing modes ignore it. Pods outside the directory are not
+redirected.
 
 This mode coexists with other eBPF tools that attach to `cgroup/connect4` —
 notably Cilium, including with [`kubeProxyReplacement`](https://docs.cilium.io/en/stable/network/kubernetes/kubeproxy-free/)
