@@ -58,12 +58,16 @@ func getMode(node *corev1.Node) (mode, cgroupPath string, err error) {
 	if mode == "" {
 		mode = api.RoutingModeDefault
 	}
+	var hasCgroupPath bool
+	cgroupPath, hasCgroupPath, err = getCgroupPath(node)
 	switch mode {
 	case api.RoutingModeBPF:
-		cgroupPath, err = getCgroupPath(node)
-		return mode, cgroupPath, err
+		if err != nil {
+			return mode, "", err
+		}
+		return mode, cgroupPath, nil
 	case api.RoutingModeLoopback, api.RoutingModeNone:
-		if node.Annotations[api.AnnotationCgroupPath] != "" || node.Labels[api.AnnotationCgroupPath] != "" {
+		if hasCgroupPath {
 			return mode, "", fmt.Errorf("%s is only supported in the %s routing mode, not %s",
 				api.AnnotationCgroupPath, api.RoutingModeBPF, mode)
 		}
@@ -71,13 +75,13 @@ func getMode(node *corev1.Node) (mode, cgroupPath string, err error) {
 	return mode, "", nil
 }
 
-func getCgroupPath(node *corev1.Node) (string, error) {
-	v := node.Annotations[api.AnnotationCgroupPath]
-	if v == "" {
-		v = node.Labels[api.AnnotationCgroupPath]
+func getCgroupPath(node *corev1.Node) (string, bool, error) {
+	v, ok := node.Annotations[api.AnnotationCgroupPath]
+	if !ok {
+		v, ok = node.Labels[api.AnnotationCgroupPath]
 	}
-	if v == "" {
-		return attestation.CgroupV2Mount, nil
+	if !ok {
+		return attestation.CgroupV2Mount, false, nil
 	}
 	p := filepath.Clean(v)
 	// Label values can't contain "/", so a relative value is taken relative to the cgroup root.
@@ -85,23 +89,23 @@ func getCgroupPath(node *corev1.Node) (string, error) {
 		p = filepath.Join(attestation.CgroupV2Mount, p)
 	}
 	if !isUnder(p, attestation.CgroupV2Mount) {
-		return "", fmt.Errorf("invalid %s %q: must be a directory under %s", api.AnnotationCgroupPath, v, attestation.CgroupV2Mount)
+		return "", true, fmt.Errorf("invalid %s %q: must be a directory under %s", api.AnnotationCgroupPath, v, attestation.CgroupV2Mount)
 	}
 	fi, err := os.Stat(p)
 	if err != nil {
-		return "", fmt.Errorf("invalid %s %q: %w", api.AnnotationCgroupPath, v, err)
+		return "", true, fmt.Errorf("invalid %s %q: %w", api.AnnotationCgroupPath, v, err)
 	}
 	if !fi.IsDir() {
-		return "", fmt.Errorf("invalid %s %q: %s is not a directory", api.AnnotationCgroupPath, v, p)
+		return "", true, fmt.Errorf("invalid %s %q: %s is not a directory", api.AnnotationCgroupPath, v, p)
 	}
 	self, err := selfCgroupDir()
 	if err != nil {
-		return "", fmt.Errorf("error resolving the emulator's own cgroup: %w", err)
+		return "", true, fmt.Errorf("error resolving the emulator's own cgroup: %w", err)
 	}
 	if !isUnder(self, p) {
-		return "", fmt.Errorf("invalid %s %q: must contain the emulator's own Pod cgroup %s", api.AnnotationCgroupPath, v, self)
+		return "", true, fmt.Errorf("invalid %s %q: must contain the emulator's own Pod cgroup %s", api.AnnotationCgroupPath, v, self)
 	}
-	return p, nil
+	return p, true, nil
 }
 
 func isUnder(p, dir string) bool {

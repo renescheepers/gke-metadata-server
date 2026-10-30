@@ -52,13 +52,21 @@ func TestGetCgroupPath(t *testing.T) {
 		name        string
 		annotations map[string]string
 		labels      map[string]string
+		unset       bool
 		want        string
 		wantErr     string
 		wantErrIs   error
 	}{
 		{
-			name: "unset means the root",
-			want: root,
+			name:  "unset means the root",
+			unset: true,
+			want:  root,
+		},
+		{
+			name:        "empty annotation means the root and hides the label",
+			annotations: map[string]string{api.AnnotationCgroupPath: ""},
+			labels:      map[string]string{api.AnnotationCgroupPath: "system.slice"},
+			want:        root,
 		},
 		{
 			name:        "annotation",
@@ -103,7 +111,8 @@ func TestGetCgroupPath(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := getCgroupPath(newNode(tt.annotations, tt.labels))
+			got, set, err := getCgroupPath(newNode(tt.annotations, tt.labels))
+			assert.Equal(t, !tt.unset, set)
 			if tt.wantErrIs != nil {
 				assert.ErrorIs(t, err, tt.wantErrIs)
 				return
@@ -164,6 +173,24 @@ func TestGetMode(t *testing.T) {
 				api.AnnotationCgroupPath:  pods,
 			},
 			wantMode: api.RoutingModeLoopback,
+			wantErr:  "is only supported in the eBPF routing mode",
+		},
+		{
+			name: "empty cgroupPath annotation in Loopback mode",
+			annotations: map[string]string{
+				api.AnnotationRoutingMode: api.RoutingModeLoopback,
+				api.AnnotationCgroupPath:  "",
+			},
+			wantMode: api.RoutingModeLoopback,
+			wantErr:  "is only supported in the eBPF routing mode",
+		},
+		{
+			name: "invalid cgroupPath in None mode",
+			annotations: map[string]string{
+				api.AnnotationRoutingMode: api.RoutingModeNone,
+				api.AnnotationCgroupPath:  "/etc",
+			},
+			wantMode: api.RoutingModeNone,
 			wantErr:  "is only supported in the eBPF routing mode",
 		},
 		{
